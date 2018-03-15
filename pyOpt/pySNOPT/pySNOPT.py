@@ -333,6 +333,8 @@ class SNOPT(Optimizer):
                 Bcast = comm.Bcast
             elif (mpi4py.__version__[0] == '1'):
                 Bcast = comm.bcast
+            elif (mpi4py.__version__[0] == '2'):
+              Bcast = comm.bcast
             self.pll = True
             self.myrank = comm.Get_rank()
         else:
@@ -368,6 +370,86 @@ class SNOPT(Optimizer):
 
             # Flush Output Files
             self.flushFiles()
+            
+            # Evaluate function values and derivatives together if required
+            if sens_type == 'user':
+            
+                fail = 0
+                if mode == 0: # assign function values only
+                    
+                    # Check history first
+                    if self.hot_start: 
+                        [vals,hist_end] = hos_file.read(ident=['obj', 'con', 'fail'])
+                        if hist_end:
+                            self.hot_start = False
+                            hos_file.close()
+                        else:
+                            [f_obj,f_con,fail] = [vals['obj'][0][0],vals['con'][0],int(vals['fail'][0][0])]
+                    
+                    # Otherwise evaluate function
+                    if not self.hot_start:
+                        [f_obj,f_con,fail] = opt_problem.obj_fun(xn, ret='val', *args, **kwargs)
+                    
+                    # Store History
+                    if self.sto_hst:
+                        log_file.write(x,'x')
+                        log_file.write(f_obj,'obj')
+                        log_file.write(f_con,'con')
+                        log_file.write(fail,'fail')
+
+                    if (fail == 1):
+                        mode = -1
+                        return mode
+
+                    print(f_obj, f_con)                    
+                    return mode,f_obj,g_obj,f_con,g_con          
+                                      
+                elif mode == 1: # assign gradients only
+                
+                    raise NotImplementedError('Assignment of gradients only is not implemented')
+                    
+                elif mode == 2: # assign values and gradients
+                
+                    # Check history first
+                    if self.hot_start:
+                        # Check for function values first
+                        [vals,hist_end] = hos_file.read(ident=['obj', 'con', 'fail'])
+                        if hist_end:
+                            self.hot_start = False
+                            hos_file.close()
+                        else:
+                            [f_obj,f_con,fail] = [vals['obj'][0][0],vals['con'][0],int(vals['fail'][0][0])]
+                        if self.hot_start: # Function values found, check for gradient values
+                            [vals,hist_end] = hos_file.read(ident=['grad_obj','grad_con'])
+                            if hist_end:
+                                self.hot_start = False
+                                hos_file.close()
+                            else:
+                                g_obj = vals['grad_obj'][0]
+                                g_con = vals['grad_con'][0].reshape((len(opt_problem._constraints.keys()),len(opt_problem._variables.keys())))    
+                    
+                    # If either values or gradients not found, evaluate function   
+                    if not self.hot_start:
+                        [f_obj,f_con,g_obj,g_con,fail] = opt_problem.obj_fun(xn, ret='all', *args, **kwargs)                
+                    
+                    # Store History
+                    if self.sto_hst:
+                        log_file.write(x,'x')
+                        log_file.write(f_obj,'obj')
+                        log_file.write(f_con,'con')
+                        log_file.write(g_obj,'grad_obj')
+                        log_file.write(g_con,'grad_con')                        
+                        log_file.write(fail,'fail')     
+                    
+                    if (fail == 1):
+                        mode = -1
+                        return mode              
+                    print(f_obj,f_con)
+                    return mode,f_obj,g_obj,f_con,g_con
+                    
+                else:
+                    raise ValueError('Requested mode should be 0, 1, or 2, not %i' % mode)
+
 
             # Evaluate User Function
             fail = 0
@@ -487,8 +569,8 @@ class SNOPT(Optimizer):
                     buc.append(opt_problem._constraints[key].upper)
         else:
             #if ((store_sol) and (myrank == 0)):
-            #   print "Optimization Problem Does Not Have Constraints\n"
-            #   print "Unconstrained Optimization Initiated\n"
+            #   print("Optimization Problem Does Not Have Constraints")
+            #   print("Unconstrained Optimization Initiated")
             ncon = 1
             blc.append(-inf)
             buc.append( inf)
@@ -542,7 +624,11 @@ class SNOPT(Optimizer):
         snopt.sninit(iPrint, iSumm, cw, iw, rw)
 
         # Memory allocation
-        ne = ncon*nvar
+        if (opt_problem._linearConstraints):
+            (aLr,aLc) = opt_problem._linearConstraints.matrix.shape
+            ne = (ncon+aLr)*nvar
+        else:
+            ne = ncon*nvar
         nnCon = numpy.array(ncon, numpy.int)
         nnObj = numpy.array(nvar, numpy.int)
         nnJac = numpy.array(nvar, numpy.int)
@@ -612,30 +698,60 @@ class SNOPT(Optimizer):
         iObj   = numpy.array([0], numpy.int)
         ObjAdd = numpy.array([0.], numpy.float)
         ProbNm = numpy.array(self.name)
-        a = numpy.zeros(ne, numpy.float)
-        ha = numpy.zeros(ne, 'i')
-        ine = 0
-        for j in range(nvar):
-            for i in range(ncon):
-                ha[ine] = i + 1
-                ine = ine + 1
-        ka = numpy.zeros(nvar+1, 'i')
-        ka[0] = 1
-        for i in range(1,nvar+1):
-            ka[i] = ka[i-1] + ncon
-        xs = numpy.concatenate((xs, numpy.zeros(ncon,numpy.float)))
-        bl = numpy.concatenate((blx, blc))
-        bu = numpy.concatenate((bux, buc))
+        # Setup constraints
+        if (opt_problem._linearConstraints): # have linear constraints
+            (aLr,aLc) = opt_problem._linearConstraints.matrix.shape
+            neL = (ncon+aLr)*nvar
+            a = numpy.zeros(neL, numpy.float)
+            ina = ncon
+            for j in range(nvar):
+                inal = 0
+                for i in range(ncon,ncon+aLr):
+                    a[ina] = opt_problem._linearConstraints.matrix[inal,j]
+                    ina = ina + 1
+                    inal = inal + 1
+                ina = ina + ncon
+            ha = numpy.zeros(neL, 'i')
+            ine = 0
+            for j in range(nvar):
+                for i in range(ncon+aLr):
+                    ha[ine] = i + 1
+                    ine = ine + 1
+            ka = numpy.zeros(nvar+1, 'i')
+            ka[0] = 1
+            for i in range(1,nvar+1):
+                ka[i] = ka[i-1] + (ncon+aLr)
+            bl = numpy.concatenate((blx,blc,opt_problem._linearConstraints.lower))
+            bu = numpy.concatenate((bux,buc,opt_problem._linearConstraints.upper))
+            xs = numpy.concatenate((xs, numpy.zeros(ncon+aLr,numpy.float)))
+            hs = numpy.zeros(nvar+ncon+aLr, 'i')
+            pi = numpy.zeros(ncon+aLr, numpy.float)
+            rc = numpy.zeros(nvar+ncon+aLr, numpy.float)              
+        else:
+            a = numpy.zeros(ne, numpy.float)
+            ha = numpy.zeros(ne, 'i')
+            ine = 0
+            for j in range(nvar):
+                for i in range(ncon):
+                    ha[ine] = i + 1
+                    ine = ine + 1          
+            ka = numpy.zeros(nvar+1, 'i')
+            ka[0] = 1
+            for i in range(1,nvar+1):
+                ka[i] = ka[i-1] + ncon
+            bl = numpy.concatenate((blx, blc))
+            bu = numpy.concatenate((bux, buc))                
+            xs = numpy.concatenate((xs, numpy.zeros(ncon,numpy.float)))
+            hs = numpy.zeros(nvar+ncon, 'i')
+            pi = numpy.zeros(ncon, numpy.float)
+            rc = numpy.zeros(nvar+ncon, numpy.float)              
         lencu = numpy.array([1], numpy.int)
         leniu = numpy.array([1], numpy.int)
         lenru = numpy.array([1], numpy.int)
         cu = numpy.array(["        "],'c')
         iu = numpy.zeros([leniu[0]], numpy.int)
         ru = numpy.zeros([lenru[0]], numpy.float)
-        hs = numpy.zeros(nvar+ncon, 'i')
         Names = numpy.array(["        "],'c')
-        pi = numpy.zeros(ncon, numpy.float)
-        rc = numpy.zeros(nvar+ncon, numpy.float)
         #inform = numpy.array([-1], numpy.int)
         mincw = numpy.array([0], numpy.int)
         miniw = numpy.array([0], numpy.int)

@@ -72,7 +72,7 @@ class Optimization(object):
     Optimization Problem Class
     '''
 
-    def __init__(self, name, obj_fun, var_set=None, obj_set=None, con_set=None, use_groups=False, *args, **kwargs):
+    def __init__(self, name, obj_fun, var_set=None, obj_set=None, con_set=None, lin_con_set=None, use_groups=False, *args, **kwargs):
 
         '''
         Optimization Problem Class Initialization
@@ -87,6 +87,7 @@ class Optimization(object):
         - var_set -> INST: Variable set, *Default* = None
         - obj_set -> INST: Objective set, *Default* = None
         - con_set -> INST: Constraints set, *Default* = None
+        - conLin_set -> INST: Linear constraints set, *Default* = None
         - use_groups -> BOOL: Use of group identifiers flag, *Default* = False
 
         Documentation last updated:  May. 23, 2011 - Ruben E. Perez
@@ -115,6 +116,12 @@ class Optimization(object):
             self._constraints = {}
         else:
             self._constraints = con_set
+            
+        # Initialize Linear Constraint Set
+        if lin_con_set is None:
+            self._linearConstraints = None
+        else:
+            self._linearConstraints = lin_con_set
 
         ## Initialize Parameter Set
         #if par_set is None:
@@ -551,7 +558,6 @@ class Optimization(object):
         Documentation last updated:  Feb. 07, 2011 - Peter W. Jansen
         '''
 
-        #
         if (len(args) > 0) and isinstance(args[0], Constraint):
             self._constraints[i] = args[0]
         else:
@@ -579,7 +585,6 @@ class Optimization(object):
         if not (isinstance(i,int) and i >= 0):
             raise ValueError("Constraint index must be an integer >= 0.")
 
-        #
         del self._constraints[i]
 
 
@@ -593,7 +598,68 @@ class Optimization(object):
 
         return self._constraints
 
+    def getLinCon(self):
+        
+        '''
+        Get Linear Constraints
+        
+        Documentation last updated:  Aug. 22, 2016 - Rick W. Fenrich
+        '''
 
+        return self._linearConstraints
+        
+        
+    def addLinCon(self, *args, **kwargs):
+        
+        '''
+        Add Linear Constraints
+        
+        Documentation last updated:  Aug. 22, 2016 - Rick W. Fenrich
+        '''
+
+        self.setLinCon(*args,**kwargs)
+
+    def setLinCon(self, *args, **kwargs):
+        
+        '''
+        Set Linear Constraints
+        
+        Documentation last updated:  Aug. 22, 2016 - Rick W. Fenrich
+        '''
+        
+        if (len(args) > 0) and isinstance(args[0], Constraint):
+            self._linearConstraints = args[0]
+        else:
+            try:
+                self._linearConstraints = Constraint(*args,**kwargs)
+            except IOError, (error):
+                raise IOError("%s" %(error))
+            except:
+                raise ValueError("Input is not a Valid for a Constraint Object instance\n")
+        
+        
+    def delLinCon(self):
+        
+        '''
+        Delete Linear Constraints
+        
+        Documentation last updated:  Aug. 22, 2016 - Rick W. Fenrich
+        '''
+
+        del self._linearConstraints
+        
+        
+    def getLinConSet(self):
+        
+        '''
+        Get Linear Constraints
+        
+        Documentation last updated:  Aug. 22, 2016 - Rick W. Fenrich
+        '''
+
+        return self._linearConstraints
+        
+        
     def getSol(self, i):
 
         '''
@@ -875,6 +941,17 @@ class Optimization(object):
             for con in self._constraints.keys():
                 lines = str(self._constraints[con]).split('\n')
                 text+= lines[1] + '\n'
+        if self._linearConstraints:
+            text += '''\n	Linear Constraints (i - inequality):\n'''
+            (nr,nc) = self._linearConstraints.matrix.shape
+            for i in range(nr):
+                text += ' '*8 + ' ' + str(self._linearConstraints.lower[i]) + ' <= '
+                text += '[{}]'.format(' '.join(str(e) for e in self._linearConstraints.matrix[i,:]))
+                text += ' <= ' + str(self._linearConstraints.upper[i])
+                text += '\n'
+    
+        return (text)
+
 
         return (text)
 

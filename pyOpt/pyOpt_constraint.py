@@ -58,7 +58,7 @@ class Constraint(object):
     Optimization Constraint Class
     '''
     
-    def __init__(self, name, type='i', *args, **kwargs):
+    def __init__(self, name, type='i', value=0.0, *args, **kwargs):
         
         '''
         Constraint Class Initialization
@@ -72,6 +72,7 @@ class Constraint(object):
         - type -> STR: Variable Type ('i'-inequality, 'e'-equality), *Default* = 'i'
         - lower -> INT: Variable Lower Value
         - upper -> INT: Variable Upper Value
+        - matrix -> NUMPY 2-D ARRAY: matrix of linear constraints
         - choices -> DICT: Variable Choices
         
         Documentation last updated:  Feb. 03, 2011 - Peter W. Jansen
@@ -80,24 +81,30 @@ class Constraint(object):
         # 
         self.name = name
         self.type = type[0].lower()
-        self.value = 0.0
-        if (type[0].lower() == 'i'):
-            self.upper = 0.0	#float(inf) 
-            self.lower = -float(inf)
-            for key in kwargs.keys():
-                if (key == 'lower'):
-                    self.lower = float(kwargs['lower'])
-                #else:
-                    #self.lower = -float(inf)
-                if (key == 'upper'):
-                    self.upper = float(kwargs['upper'])
-                #else:
-                    #self.upper = float(inf) 
-        elif (type[0].lower() == 'e'):
-            if 'equal' in kwargs:
-                self.equal = float(kwargs['equal'])
-            else:
-                self.equal = 0.0
+        self.value = value
+        if (kwargs.has_key('matrix')):
+            self.matrix = kwargs['matrix']
+            if (kwargs.has_key('lower')):
+                self.lower = [float(i) for i in kwargs['lower']]
+            if (kwargs.has_key('upper')):
+                self.upper = [float(i) for i in kwargs['upper']]
+            if (type[0].lower() != 'i'):
+                raise NotImplementedError('Only linear inequality constraints can be implemented')       
+        else:
+            if (type[0].lower() == 'i'):
+                self.upper = 0.0	#float(inf) 
+                self.lower = -float(inf)
+                for key in kwargs.keys():
+                    if (key == 'lower'):
+                        self.lower = float(kwargs['lower'])
+                    if (key == 'upper'):
+                        self.upper = float(kwargs['upper'])
+            elif (type[0].lower() == 'e'):
+                if (kwargs.has_key('equal')):
+                    self.equal = float(kwargs['equal'])
+                else:
+                    self.equal = 0.0
+
         else:
             raise IOError('Constraint type not understood -- use either i(nequality) or e(quality)')
         
