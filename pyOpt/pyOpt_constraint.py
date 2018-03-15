@@ -105,8 +105,8 @@ class Constraint(object):
                 else:
                     self.equal = 0.0
 
-        else:
-            raise IOError('Constraint type not understood -- use either i(nequality) or e(quality)')
+            else:
+                raise IOError('Constraint type not understood -- use either i(nequality) or e(quality)')
         
         #if (kwargs['nvars']):
         #	self.sensitivity = numpy.zeros(kwargs['nvars'],float)
