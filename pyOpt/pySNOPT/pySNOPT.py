@@ -521,8 +521,11 @@ class SNOPT(Optimizer):
             for i in range(len(opt_problem._constraints.keys())):
                 if isinstance(f_con[i],complex):
                     f_con[i] = f_con[i].astype(float)
-            if not f_con:
-                f_con = [0]
+            #print f_con
+#            if not all(f_con):
+#                print("not all f_con")
+#                print f_con
+#                f_con = [0]
 
             return mode,f_obj,g_obj,f_con,g_con
 
@@ -784,6 +787,10 @@ class SNOPT(Optimizer):
                 snopt.closeunit(self.options['iPrint'][1])
             if (iSumm != 0):
                 snopt.closeunit(self.options['iSumm'][1])
+            if (self.options['New basis file'] != 0):
+                snopt.closeunit(self.options['New basis file'][1])
+            if (self.options['Dump file'] != 0):
+                snopt.closeunit(self.options['Dump file'][1])
 
         # Store Results
         sol_inform = {}
